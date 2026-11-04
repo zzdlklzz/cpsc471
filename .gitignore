@@ -1,1 +1,28 @@
 *.env
+.env.*
+!.env.example
+!*.env.example
+
+# Python environments and generated files
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+db.sqlite3
+db.sqlite3-journal
+
+# Frontend dependencies and build output
+node_modules/
+dist/
+dist-ssr/
+*.tsbuildinfo
+*.log
+
+# Local operating-system files
+.DS_Store
