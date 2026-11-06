@@ -7,10 +7,10 @@ CPSC 471 project using React + TypeScript (Vite) and Python + Django.
 - Node.js 22.12 or newer in the Node 22 release line, with npm
 - Python 3.13 (the version used for the current backend setup)
 - Git
+- A running local MySQL Server and an existing project database
 
-The frontend and backend currently run independently. MySQL integration is not
-configured yet; Django still uses its default local SQLite configuration. No
-MySQL installation or environment file is required to run this skeleton.
+The frontend and backend currently run independently. Django is configured for
+MySQL; each member supplies their own connection details in `backend/.env`.
 
 ## Clone the repository
 
@@ -47,6 +47,26 @@ npm run lint
 
 Open a second terminal at the repository root.
 
+Before installing Python dependencies, ensure the MySQL client development
+libraries are available for `mysqlclient`. On macOS with MySQL installed under
+`/usr/local/mysql`, use:
+
+```bash
+brew install pkg-config
+export PKG_CONFIG_PATH="/usr/local/mysql/lib/pkgconfig"
+export MYSQLCLIENT_LDFLAGS="-L/usr/local/mysql/lib -lmysqlclient -Wl,-rpath,/usr/local/mysql/lib"
+```
+
+Other installations may use a different path. See the
+[mysqlclient installation instructions](https://github.com/PyMySQL/mysqlclient#install)
+for your platform.
+
+Copy `backend/.env.example` to `backend/.env` if you do not already have one.
+Fill in `DB_NAME`, `DB_USER`, and `DB_PASSWORD` using your existing database and
+connection credentials. Adjust the host/port if needed. The database name is the
+schema name, not the Workbench connection label. Do this before running any
+`manage.py` commands. Do not commit `.env`.
+
 ### macOS / Linux
 
 ```bash
@@ -71,8 +91,9 @@ py -3.13 -m venv .venv
 Open http://127.0.0.1:8000 to see the Django starter page.
 
 Django may warn about unapplied migrations. This is expected for the empty
-skeleton. You can leave them unapplied for now; the project tables are not yet
-implemented.
+skeleton. You can leave them unapplied for now. Initialize the project tables
+using [the SQL setup instructions](backend/sql/README.md); Django migrations do
+not load `backend/sql/schema.sql`.
 
 For subsequent runs on macOS/Linux, from `backend/`:
 
