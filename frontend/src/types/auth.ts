@@ -7,7 +7,7 @@ export interface CurrentUser {
   household_id: number;
 }
 
-/** Household signup only; the backend assigns IDs and the demo zone. */
+/** Household signup only; the backend assigns IDs and resolves the zone. */
 export interface SignupRequest extends CreateMemberRequest {
   login_email: string;
   password: string;

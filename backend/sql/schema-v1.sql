@@ -37,7 +37,7 @@ CREATE TABLE HOUSEHOLD_MEMBER (
 
 CREATE TABLE ACCOUNT_HOLDER (
     member_id INT UNSIGNED NOT NULL,
-    login_email VARCHAR(254) NOT NULL,
+    login_email VARCHAR(255) NOT NULL,
     password_hash VARCHAR(255) NOT NULL,
     PRIMARY KEY (member_id),
     UNIQUE (login_email),
