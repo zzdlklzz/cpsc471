@@ -1,178 +1,134 @@
--- EvacBridge: development and API test data.
---
--- Run this once after schema-v1.sql in a fresh development/test database.
--- The script uses fixed IDs so API requests and expected results are repeatable.
--- It is not intended for production or for a database containing real data.
---
--- Household test logins (Django PBKDF2 hashes are stored below):
---   primary@example.test  / PrimaryPass123!
---   second@example.test   / SecondPass123!
---   other@example.test    / OtherPass123!
---
--- Supporting publisher data is required by EVACUATION_NOTICE.staff_id.
---   publisher@example.test / StaffPass123!
---
--- Main API scenarios:
---   household 1001: zone 101; use with X-Dev-Household-ID during development
---   household 1002: zone 102; ownership and final-account-holder checks
---   member 1101: registration submitter; deletion must be rejected
---   member 1102: ordinary unreferenced member; may be edited/deleted
---   member 1103: ordinary member ready for account enabling
---   member 1104: registration participant; deletion must be rejected
---   member 1105: unreferenced second account holder; may be deleted safely
---   member 1201: household 1002's final account holder; deletion must be rejected
---   notice 3003: belongs to two zones; list queries must not duplicate it
-
--- Predefined zones for zone lookup, signup, household editing, and notice filters.
 INSERT INTO EVACUATION_ZONE (zone_id, zone_name) VALUES
-    (101, 'North Ridge'),
-    (102, 'River District'),
-    (103, 'South Foothills');
+    (1, 'Zone A - Riverside'),
+    (2, 'Zone B - Hillcrest'),
+    (3, 'Zone C - Lakeview'),
+    (4, 'Zone D - Pinewood'),
+    (5, 'Zone E - Industrial Park');
 
-INSERT INTO HOUSEHOLD (
-    household_id,
-    street,
-    city,
-    province,
-    postal_code,
-    zone_id
-) VALUES
-    (1001, '10 Aspen Way', 'Calgary', 'Alberta', 'T2N 1N4', 101),
-    (1002, '25 River Road', 'Calgary', 'Alberta', 'T2P 2M5', 102);
-
-INSERT INTO HOUSEHOLD_MEMBER (
-    member_id,
-    first_name,
-    last_name,
-    date_of_birth,
-    phone_number,
-    household_id
-) VALUES
-    (1101, 'Alex', 'Morgan', '1988-02-14', '403-555-0101', 1001),
-    (1102, 'Jordan', 'Morgan', '2010-07-09', NULL, 1001),
-    (1103, 'Riley', 'Morgan', '2004-11-23', '403-555-0103', 1001),
-    (1104, 'Taylor', 'Morgan', '2015-03-18', NULL, 1001),
-    (1105, 'Casey', 'Morgan', '1990-08-30', '403-555-0105', 1001),
-    (1201, 'Sam', 'Patel', '1985-05-12', '403-555-0201', 1002),
-    (1202, 'Jamie', 'Patel', '2012-12-01', NULL, 1002);
-
-INSERT INTO ACCOUNT_HOLDER (member_id, login_email, password_hash) VALUES
-    (
-        1101,
-        'primary@example.test',
-        CONCAT(
-            'pbkdf2_sha256$1000000$evacbridgeprimary1000$',
-            'jJZxvP3PXIpNsvymsOhlHFoD1OoW5/e4woNGGA7Zbbs='
-        )
-    ),
-    (
-        1105,
-        'second@example.test',
-        CONCAT(
-            'pbkdf2_sha256$1000000$evacbridgesecond1002$',
-            'Di0D+3w1fOAKl9oEDi3+JcA20bvYsZH8DYiHG5qs6Ho='
-        )
-    ),
-    (
-        1201,
-        'other@example.test',
-        CONCAT(
-            'pbkdf2_sha256$1000000$evacbridgeother2000$',
-            'T09p7rtsXtr3/+87p2ChrpWzFX1hHyfUaYGSVuy8wcY='
-        )
-    );
+INSERT INTO EMERGENCY_EVENT (event_id, name, event_type, start_date, end_date, status) VALUES
+    (1, 'Foothills Wildfire 2026', 'Wildfire', '2026-08-02', NULL, 'Active'),
+    (2, 'Spring River Flood 2026', 'Flood', '2026-04-18', '2026-05-10', 'Closed');
 
 INSERT INTO STAFF (staff_id, name, login_email, password_hash) VALUES
-    (
-        9001,
-        'Mock Notice Publisher',
-        'publisher@example.test',
-        CONCAT(
-            'pbkdf2_sha256$1000000$evacbridgestaff9000$',
-            'XqLFmrN7yysAmQc+9Ei8pEMf9Db0st9x6jfamqUGYwo='
-        )
-    );
+    (1, 'Maria Chen',     'maria.chen@evacbridge.example',    'sample_hash_staff_1'),
+    (2, 'Omar Haddad',    'omar.haddad@evacbridge.example',   'sample_hash_staff_2'),
+    (3, 'Priya Singh',    'priya.singh@evacbridge.example',   'sample_hash_staff_3'),
+    (4, 'Liam O''Connor', 'liam.oconnor@evacbridge.example',  'sample_hash_staff_4');
 
-INSERT INTO EMERGENCY_EVENT (
-    event_id,
-    name,
-    event_type,
-    start_date,
-    end_date,
-    status
-) VALUES
-    (2001, 'North Ridge Wildfire', 'Wildfire', '2026-05-01', NULL, 'active'),
-    (2002, 'Spring River Flood', 'Flood', '2026-04-10', '2026-04-18', 'resolved');
+-- available_spaces starts equal to capacity, then Part 2b recalculates it
+INSERT INTO SHELTER (shelter_id, name, address, capacity, operating_status, available_spaces) VALUES
+    (1, 'Northside Recreation Centre', '4100 Centre Street',  120, 'Open',   120),
+    (2, 'Hillcrest High School Gym',   '210 School Road',      80, 'Open',    80),
+    (3, 'Lakeview Community Hall',     '55 Lakeview Drive',    60, 'Open',    60),
+    (4, 'Old Arena',                   '9 Arena Road',        100, 'Closed', 100);
 
--- Publication times are deliberately different to verify newest-first ordering.
-INSERT INTO EVACUATION_NOTICE (
-    notice_id,
-    title,
-    message,
-    published_at,
-    event_id,
-    staff_id
-) VALUES
-    (
-        3001,
-        'North Ridge evacuation alert',
-        'Residents in North Ridge should prepare to leave immediately.',
-        '2026-05-01 08:00:00',
-        2001,
-        9001
-    ),
-    (
-        3002,
-        'River District monitoring notice',
-        'Residents near the river should monitor official updates.',
-        '2026-05-01 09:00:00',
-        2001,
-        9001
-    ),
-    (
-        3003,
-        'Wildfire evacuation order expanded',
-        'The evacuation order now includes North Ridge and River District.',
-        '2026-05-01 10:30:00',
-        2001,
-        9001
-    ),
-    (
-        3004,
-        'South Foothills advisory',
-        'Smoke may reduce visibility in South Foothills.',
-        '2026-05-01 11:15:00',
-        2001,
-        9001
-    ),
-    (
-        3005,
-        'River levels returned to normal',
-        'The Spring River Flood event is resolved.',
-        '2026-04-18 16:00:00',
-        2002,
-        9001
-    );
+INSERT INTO MANAGES (staff_id, shelter_id) VALUES
+    (1, 1), (1, 2), (2, 2), (3, 3);
+
+INSERT INTO HOUSEHOLD (household_id, street, city, province, postal_code, zone_id) VALUES
+    (1, '12 Maple Street',    'Fort McMurray', 'Alberta', 'T9H 1A1', 1),
+    (2, '88 Birch Avenue',    'Fort McMurray', 'Alberta', 'T9H 2B2', 1),
+    (3, '41 Hillcrest Road',  'Fort McMurray', 'Alberta', 'T9K 3C3', 2),
+    (4, '7 Lakeview Drive',   'Fort McMurray', 'Alberta', 'T9J 4D4', 3),
+    (5, '23 Pine Crescent',   'Fort McMurray', 'Alberta', 'T9K 5E5', 4),
+    (6, '150 Industrial Way', 'Fort McMurray', 'Alberta', 'T9H 6F6', 5);
+
+INSERT INTO HOUSEHOLD_MEMBER (member_id, first_name, last_name, date_of_birth, phone_number, household_id) VALUES
+    (1,  'Anh',      'Nguyen',   '1980-03-14', '780-555-0101', 1),
+    (2,  'Linh',     'Nguyen',   '1983-07-22', '780-555-0102', 1),
+    (3,  'Minh',     'Nguyen',   '2012-05-09', NULL,           1),
+    (4,  'Chidi',    'Okafor',   '1975-11-30', '780-555-0111', 2),
+    (5,  'Ada',      'Okafor',   '1978-02-05', NULL,           2),
+    (6,  'Emeka',    'Okafor',   '2008-09-17', NULL,           2),
+    (7,  'Ngozi',    'Okafor',   '2015-01-28', NULL,           2),
+    (8,  'Sophie',   'Tremblay', '1990-06-12', '780-555-0131', 3),
+    (9,  'Lucas',    'Tremblay', '2019-10-03', NULL,           3),
+    (10, 'Daniel',   'Bear',     '1968-04-25', '780-555-0141', 4),
+    (11, 'Rosa',     'Bear',     '1970-12-08', NULL,           4),
+    (12, 'Marek',    'Kowalski', '1985-08-19', '780-555-0151', 5),
+    (13, 'Ewa',      'Kowalski', '1987-01-11', '780-555-0152', 5),
+    (14, 'Harpreet', 'Singh',    '1992-09-02', '780-555-0161', 6);
+
+INSERT INTO ACCOUNT_HOLDER (member_id, login_email, password_hash) VALUES
+    (1,  'anh.nguyen@household.example',      'sample_hash_member_1'),
+    (2,  'linh.nguyen@household.example',     'sample_hash_member_2'),
+    (4,  'chidi.okafor@household.example',    'sample_hash_member_4'),
+    (8,  'sophie.tremblay@household.example', 'sample_hash_member_8'),
+    (10, 'daniel.bear@household.example',     'sample_hash_member_10'),
+    (12, 'marek.kowalski@household.example',  'sample_hash_member_12'),
+    (14, 'harpreet.singh@household.example',  'sample_hash_member_14');
+
+INSERT INTO EVACUATION_NOTICE (notice_id, title, message, published_at, event_id, staff_id) VALUES
+    (1, 'Evacuation Order: Riverside and Hillcrest',
+        'Leave now. Zone A and Zone B must evacuate. Register for shelter in EvacBridge.',
+        '2026-08-02 12:00:00', 1, 1),
+    (2, 'Evacuation Alert: Lakeview and Pinewood',
+        'Zone C and Zone D should be ready to leave on short notice.',
+        '2026-08-02 20:30:00', 1, 2),
+    (3, 'Shelter Update',
+        'Shelters in Hillcrest and Lakeview are accepting arrivals. Check available spaces before you register.',
+        '2026-08-03 08:00:00', 1, 3),
+    (4, 'Flood Warning: Riverside',
+        'River levels are rising in Zone A. Move to higher ground.',
+        '2026-04-18 06:00:00', 2, 2);
 
 INSERT INTO NOTICE_ZONE (notice_id, zone_id) VALUES
-    (3001, 101),
-    (3002, 102),
-    (3003, 101),
-    (3003, 102),
-    (3004, 103),
-    (3005, 102);
+    (1, 1), (1, 2), (2, 3), (2, 4), (3, 1), (3, 2), (3, 3), (4, 1);
 
--- These records exist specifically to exercise safe member-removal rules.
--- Member 1101 is the submitter while member 1104 is a participant.
-INSERT INTO REGISTRATION (
-    registration_id,
-    submitted_at,
-    status,
-    household_id,
-    event_id,
-    submitter_id
-) VALUES
-    (4001, '2026-05-01 10:45:00', 'registered', 1001, 2001, 1101);
+INSERT INTO REGISTRATION (registration_id, submitted_at, status, household_id, event_id, submitter_id) VALUES
+    (1, '2026-08-02 14:10:00', 'Active', 1, 1, 1),
+    (2, '2026-08-02 15:30:00', 'Active', 2, 1, 4),
+    (3, '2026-08-03 09:05:00', 'Active', 3, 1, 8),
+    (4, '2026-08-03 10:20:00', 'Active', 4, 1, 10),
+    (5, '2026-08-03 16:45:00', 'Active', 5, 1, 12),
+    (6, '2026-04-19 08:00:00', 'Active', 1, 2, 2);
 
+-- Only participating members are listed (registration 5 and 6 do not include everyone)
 INSERT INTO REGISTRATION_MEMBER (registration_id, member_id) VALUES
-    (4001, 1104);
+    (1, 1), (1, 2), (1, 3),
+    (2, 4), (2, 5), (2, 6), (2, 7),
+    (3, 8), (3, 9),
+    (4, 10), (4, 11),
+    (5, 12),
+    (6, 1), (6, 3);
+
+INSERT INTO PLACEMENT (registration_id, placement_no, created_at, arrival_time, departure_time, status, shelter_id) VALUES
+    (1, 1, '2026-08-02 14:15:00', '2026-08-02 17:00:00', '2026-08-03 11:00:00', 'Transferred', 1),
+    (1, 2, '2026-08-03 11:05:00', '2026-08-03 12:00:00', NULL,                  'Arrived',     2),
+    (2, 1, '2026-08-02 15:35:00', '2026-08-02 18:20:00', NULL,                  'Arrived',     1),
+    (3, 1, '2026-08-03 09:10:00', NULL,                  NULL,                  'Reserved',    3),
+    (4, 1, '2026-08-03 10:25:00', NULL,                  NULL,                  'Reserved',    2),
+    (5, 1, '2026-08-03 16:50:00', NULL,                  NULL,                  'Reserved',    2),
+    (6, 1, '2026-04-19 08:05:00', '2026-04-19 10:00:00', '2026-05-02 12:00:00', 'Departed',    1);
+
+INSERT INTO REUNIFICATION_REQUEST
+    (request_id, sought_person_name, sought_person_dob, other_info, submitted_at, status, staff_response, reviewed_at, event_id, requester_id, reviewer_id) VALUES
+    (1, 'Marek Kowalski', NULL, 'Neighbour from Pine Crescent',
+        '2026-08-03 18:00:00', 'Pending', NULL, NULL, 1, 14, NULL),
+    (2, 'Sophie Tremblay', NULL, 'Friend with a young child',
+        '2026-08-03 19:10:00', 'Responded',
+        'A matching household has been found. Staff will contact you to arrange a call.',
+        '2026-08-04 09:15:00', 1, 12, 3),
+    (3, 'Ewa Kowalska', '1987-01-11', 'Colleague, may be registered under a different spelling',
+        '2026-08-04 07:40:00', 'Pending', NULL, NULL, 1, 4, NULL);
+
+INSERT INTO POSSIBLE_MATCH (request_id, registration_id, placement_no) VALUES
+    (2, 3, 1),
+    (3, 2, 1),
+    (3, 5, 1);
+
+-- ---------------------------------------------------------------------
+-- PART 2b: KEEP SHELTER.available_spaces CORRECT
+-- available_spaces = capacity - participating members in active placements
+-- (active = Reserved or Arrived). Run this after every placement,
+-- registration-member or capacity change.
+-- ---------------------------------------------------------------------
+UPDATE SHELTER
+SET available_spaces = capacity - (
+    SELECT COUNT(*)
+    FROM PLACEMENT p
+    JOIN REGISTRATION_MEMBER rm ON rm.registration_id = p.registration_id
+    WHERE p.shelter_id = SHELTER.shelter_id
+      AND p.status IN ('Reserved', 'Arrived')
+)
+WHERE shelter_id > 0;   -- key column in WHERE, so MySQL safe update mode accepts it
