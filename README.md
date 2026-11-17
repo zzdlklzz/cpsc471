@@ -105,6 +105,45 @@ python manage.py runserver
 On Windows, run `.\.venv\Scripts\python.exe manage.py runserver` instead.
 Reinstall from `requirements.txt` when the committed Python dependencies change.
 
+## Database and demo accounts
+
+Follow [backend/sql/README.md](backend/sql/README.md) to load `schema-v1.sql` and
+`seed-v1.sql`, then run this once from `backend/` so the demo accounts get a real
+password (`DEMO_PASSWORD` in `backend/.env`):
+
+```bash
+python manage.py set_demo_passwords
+python manage.py check_schema
+```
+
+## Using both apps together
+
+Start Django on port 8000 and Vite on port 5173. Vite forwards every `/api`
+request to Django (see `frontend/vite.config.ts`), so open the app at
+http://localhost:5173 and log in there.
+
+Login sessions use a signed cookie, so no Django migration is needed for them.
+
+## Backend tests
+
+```bash
+cd backend
+python manage.py test
+```
+
+The test runner creates a test database and loads `backend/sql/schema-v1.sql`
+into it. Your MySQL user must be allowed to create the database `test_<DB_NAME>`.
+
+## Shared helpers for all members
+
+- Backend: `core/auth_helpers.py` has `get_current_user`, `login_required_api`,
+  `household_required` and `staff_required`.
+- Frontend: `useAuth()` from `src/context/authContext.ts`, the `api()` function in
+  `src/api/client.ts`, route names in `src/routes.ts`, and the small router in
+  `src/router/`.
+- See [docs/PERSON1_PLAN.md](docs/PERSON1_PLAN.md) for the endpoints and the open
+  team decisions.
+
 ## Working locally
 
 - Keep both terminals running to use both apps. Press `Ctrl+C` to stop either server.
@@ -117,4 +156,6 @@ Reinstall from `requirements.txt` when the committed Python dependencies change.
 ```text
 frontend/       React + TypeScript application
 backend/        Django project and Python requirements
+backend/sql/    Schema, sample data and database setup notes
+docs/           Plans and team decisions
 ```

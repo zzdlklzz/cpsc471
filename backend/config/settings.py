@@ -41,6 +41,10 @@ INSTALLED_APPS = [
     "django.contrib.sessions",
     "django.contrib.messages",
     "django.contrib.staticfiles",
+    # EvacBridge apps
+    "core",        # shared models, login helpers, access checks
+    "accounts",    # Person 1: login, signup, household
+    "notices",     # Person 1: notice viewing
 ]
 
 MIDDLEWARE = [
@@ -131,3 +135,14 @@ STATIC_URL = "static/"
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# --- EvacBridge additions (Person 1) ---
+# Login sessions are kept in a signed cookie, so no django_session table and no
+# "migrate" step is needed. Our own tables come from backend/sql/schema-v1.sql.
+SESSION_ENGINE = "django.contrib.sessions.backends.signed_cookies"
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = "Lax"
+# The React dev server (Vite) sends /api requests here through its proxy.
+CSRF_TRUSTED_ORIGINS = ["http://localhost:5173", "http://127.0.0.1:5173"]
+# Tests load backend/sql/schema-v1.sql into the test database.
+TEST_RUNNER = "core.test_runner.SchemaTestRunner"
