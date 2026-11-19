@@ -8,4 +8,8 @@ export default defineConfig({
     react(),
     babel({ presets: [reactCompilerPreset()] })
   ],
+  server: {
+    // Send API calls to Django, so the browser sees one site and the login cookie works.
+    proxy: { '/api': 'http://127.0.0.1:8000' },
+  },
 })
