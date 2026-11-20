@@ -114,3 +114,87 @@ class LoginTests(TestCase):
             self.assertEqual(client.post("/api/auth/logout",
                                         HTTP_X_CSRFTOKEN=client.cookies["csrftoken"].value).status_code, 200)
             self.assertEqual(client.get("/api/auth/me").status_code, 401)
+
+
+class EventOverviewTests(TestCase):
+    def setUp(self):
+        import datetime
+
+        self.zone_a = t.make_zone("Zone A")
+        self.zone_b = t.make_zone("Zone B")
+        t.make_household(self.zone_a)
+        self.staff = t.make_staff()
+        self.active = t.make_event("Active fire")
+        self.closed = t.make_event("Closed fire", status="Closed")
+        self.closed.end_date = datetime.date(2026, 8, 4)
+        self.closed.save()
+        self.old = t.make_notice(self.active, self.staff, [self.zone_a], "Older",
+                                 datetime.datetime(2026, 8, 1, 12))
+        self.new = t.make_notice(self.active, self.staff, [self.zone_b, self.zone_a], "Newer")
+        self.tie = t.make_notice(self.active, self.staff, [self.zone_b], "Same time")
+        self.login()
+
+    def login(self, staff=True):
+        path = "/api/staff/auth/login" if staff else "/api/auth/login"
+        email = "staff@example.com" if staff else "holder@example.com"
+        response = self.client.post(path, json.dumps({"login_email": email, "password": t.PASSWORD}),
+                                    content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+
+    def test_complete_overview_deduplicates_targets_and_orders_notices(self):
+        response = self.client.get("/api/staff/events")
+        self.assertEqual(response.status_code, 200)
+        events = response.json()["events"]
+        self.assertEqual([e["event_id"] for e in events], [self.closed.pk, self.active.pk])
+        self.assertEqual(events[0]["notices"], [])
+        self.assertEqual(events[0]["end_date"], "2026-08-04")
+        active = events[1]
+        self.assertEqual({k: v for k, v in active.items() if k != "notices"}, {
+            "event_id": self.active.pk, "name": "Active fire", "event_type": "Wildfire",
+            "status": "Active", "start_date": "2026-08-01", "end_date": None,
+        })
+        self.assertEqual([n["notice_id"] for n in active["notices"]], [self.tie.pk, self.new.pk, self.old.pk])
+        notice = active["notices"][1]
+        self.assertEqual(notice, {
+            "notice_id": self.new.pk, "title": "Newer", "message": "Message text",
+            "published_at": self.new.published_at.isoformat(),
+            "event": {k: v for k, v in active.items() if k != "notices"},
+            "publisher": {"staff_id": self.staff.pk, "name": self.staff.name},
+            "zones": [{"zone_id": self.zone_a.pk, "zone_name": "Zone A"},
+                      {"zone_id": self.zone_b.pk, "zone_name": "Zone B"}],
+        })
+
+    def test_status_filters_and_invalid_values(self):
+        for status, event in (("Active", self.active), ("Closed", self.closed)):
+            response = self.client.get("/api/staff/events", {"status": status})
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual([e["event_id"] for e in response.json()["events"]], [event.pk])
+        for status in ("Pending", "active", "", "1"):
+            self.assertEqual(self.client.get("/api/staff/events", {"status": status}).status_code, 400)
+
+    def test_empty_filter_and_empty_database(self):
+        self.closed.delete()
+        self.assertEqual(self.client.get("/api/staff/events?status=Closed").json(), {"events": []})
+        from core.models import EvacuationNotice, NoticeZone
+        NoticeZone.objects.all().delete()
+        EvacuationNotice.objects.all().delete()
+        self.active.delete()
+        self.assertEqual(self.client.get("/api/staff/events").json(), {"events": []})
+
+    def test_access_control_and_read_only_route(self):
+        self.assertEqual(self.client.post("/api/staff/events").status_code, 405)
+        self.client.post("/api/auth/logout")
+        self.assertEqual(self.client.get("/api/staff/events").status_code, 401)
+        self.login(staff=False)
+        self.assertEqual(self.client.get("/api/staff/events").status_code, 403)
+
+    def test_household_reads_keep_existing_shape_and_zone_selection(self):
+        self.login(staff=False)
+        events = self.client.get("/api/events").json()["events"]
+        self.assertEqual(len(events), 2)
+        self.assertNotIn("notices", events[0])
+        notices = self.client.get("/api/notices").json()["notices"]
+        self.assertEqual([n["notice_id"] for n in notices], [self.new.pk, self.old.pk])
+        self.assertTrue(notices[0]["targets_my_zone"])
+        self.assertEqual(notices[0]["published_at"], "2026-08-02 12:00")
+        self.assertEqual(len(self.client.get("/api/zones").json()["zones"]), 2)
