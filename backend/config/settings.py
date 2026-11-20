@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     # EvacBridge apps
+    "staff",       # Person 3: staff login and management
     "core",        # shared models, login helpers, access checks
     "accounts",    # Person 1: login, signup, household
     "notices",     # Person 1: notice viewing
