@@ -3,9 +3,10 @@ from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
 from core.auth_helpers import api_error, get_current_user, read_json, set_current_user, staff_required
-from core.models import Staff
+from core.models import EmergencyEvent, Staff
 
 from .queries import event_overview
+from .serializers import event_to_dict, validate_event
 
 
 @require_http_methods(["POST"])
@@ -27,9 +28,37 @@ def login(request):
 
 
 @staff_required
-@require_http_methods(["GET"])
+@require_http_methods(["GET", "POST"])
 def events(request):
+    if request.method == "POST":
+        data = read_json(request)
+        if data is None:
+            return api_error(400, "Send JSON data.")
+        clean, errors = validate_event(data)
+        if errors:
+            return api_error(400, "Please correct the highlighted fields.", errors)
+        event = EmergencyEvent.objects.create(**clean)
+        return JsonResponse(event_to_dict(event), status=201)
     status = request.GET.get("status")
     if status is not None and status not in ("Active", "Closed"):
         return api_error(400, "Choose Active or Closed for status.")
     return JsonResponse({"events": event_overview(status)})
+
+
+@staff_required
+@require_http_methods(["PATCH"])
+def event_detail(request, event_id):
+    event = EmergencyEvent.objects.filter(pk=event_id).first()
+    if event is None:
+        return api_error(404, "This event was not found.")
+    data = read_json(request)
+    if data is None:
+        return api_error(400, "Send JSON data.")
+    clean, errors = validate_event(data, instance=event)
+    if errors:
+        return api_error(400, "Please correct the highlighted fields.", errors)
+    for field, value in clean.items():
+        setattr(event, field, value)
+    if clean:
+        event.save(update_fields=list(clean))
+    return JsonResponse(event_to_dict(event))

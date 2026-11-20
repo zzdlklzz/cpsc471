@@ -1,5 +1,7 @@
 from core.models import EmergencyEvent, EvacuationNotice, NoticeZone
 
+from .serializers import event_to_dict
+
 
 def event_overview(status=None):
     events = EmergencyEvent.objects.order_by("-start_date", "-event_id")
@@ -7,13 +9,7 @@ def event_overview(status=None):
         events = events.filter(status=status)
     rows = {}
     for event in events:
-        rows[event.event_id] = {
-            "event_id": event.event_id, "name": event.name,
-            "event_type": event.event_type, "status": event.status,
-            "start_date": event.start_date.isoformat(),
-            "end_date": event.end_date.isoformat() if event.end_date else None,
-            "notices": [],
-        }
+        rows[event.event_id] = {**event_to_dict(event), "notices": []}
 
     notices = list(EvacuationNotice.objects.filter(event_id__in=rows)
                    .select_related("staff").order_by("-published_at", "-notice_id"))

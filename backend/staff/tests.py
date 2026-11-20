@@ -181,8 +181,8 @@ class EventOverviewTests(TestCase):
         self.active.delete()
         self.assertEqual(self.client.get("/api/staff/events").json(), {"events": []})
 
-    def test_access_control_and_read_only_route(self):
-        self.assertEqual(self.client.post("/api/staff/events").status_code, 405)
+    def test_overview_access_control_and_unsupported_method(self):
+        self.assertEqual(self.client.delete("/api/staff/events").status_code, 405)
         self.client.post("/api/auth/logout")
         self.assertEqual(self.client.get("/api/staff/events").status_code, 401)
         self.login(staff=False)
@@ -198,3 +198,128 @@ class EventOverviewTests(TestCase):
         self.assertTrue(notices[0]["targets_my_zone"])
         self.assertEqual(notices[0]["published_at"], "2026-08-02 12:00")
         self.assertEqual(len(self.client.get("/api/zones").json()["zones"]), 2)
+
+
+class EventWriteTests(TestCase):
+    def setUp(self):
+        self.zone = t.make_zone()
+        self.household, self.member, _ = t.make_household(self.zone)
+        self.staff = t.make_staff()
+        response = self.client.post("/api/staff/auth/login", json.dumps({
+            "login_email": "staff@example.com", "password": t.PASSWORD}), content_type="application/json")
+        self.assertEqual(response.status_code, 200)
+        self.data = {"name": "Flood warning", "event_type": "Flood", "start_date": "2026-08-01"}
+        self.event = t.make_event()
+        self.url = f"/api/staff/events/{self.event.pk}"
+
+    def write(self, data, patch=False, client=None, **headers):
+        client = client or self.client
+        method = client.patch if patch else client.post
+        return method(self.url if patch else "/api/staff/events", json.dumps(data),
+                      content_type="application/json", **headers)
+
+    def test_create_defaults_and_maximum_length_name(self):
+        response = self.write({**self.data, "name": "N" * 100})
+        self.assertEqual(response.status_code, 201)
+        created = response.json()
+        self.assertEqual(created, {**self.data, "name": "N" * 100, "event_id": created["event_id"],
+                                   "status": "Active", "end_date": None})
+        shared = self.client.get("/api/events").json()["events"]
+        self.assertIn(created, shared)
+        self.assertEqual(self.write({**self.data, "status": "Closed", "end_date": "2026-08-01"}).status_code, 201)
+
+    def test_patch_merged_dates_clear_end_and_preserve_omitted_fields(self):
+        self.assertEqual(self.write({"end_date": "2026-08-04"}, patch=True).status_code, 200)
+        response = self.write({"name": "  Renamed  ", "start_date": "2026-08-05"}, patch=True)
+        self.assertEqual(response.status_code, 400)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.name, "Test Wildfire")
+        self.assertEqual(self.write({"end_date": "2026-07-31"}, patch=True).status_code, 400)
+        response = self.write({"name": "  Renamed  ", "start_date": "2026-08-05", "end_date": None}, patch=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()["name"], "Renamed")
+        self.assertIsNone(response.json()["end_date"])
+        self.assertEqual(response.json()["event_type"], "Wildfire")
+        self.assertEqual(self.write({}, patch=True).json(), response.json())
+
+    def test_invalid_input_saves_nothing(self):
+        from core.models import EmergencyEvent
+        invalid = [
+            {"name": " "}, {"name": "x" * 101}, {"name": 5},
+            {"event_type": "Earthquake"}, {"event_type": []}, {"status": "Pending"},
+            {"status": None}, {"start_date": None}, {"start_date": "2026-02-30"},
+            {"start_date": "20260801"}, {"start_date": True}, {"end_date": ""},
+            {"end_date": "2026-07-31"}, {"end_date": {}},
+        ]
+        before = EmergencyEvent.objects.count()
+        for changes in invalid:
+            with self.subTest(changes=changes):
+                self.assertEqual(self.write({**self.data, **changes}).status_code, 400)
+                self.assertEqual(self.write(changes, patch=True).status_code, 400)
+        self.assertEqual(self.write({}).status_code, 400)
+        self.assertEqual(EmergencyEvent.objects.count(), before)
+        self.event.refresh_from_db()
+        self.assertEqual(self.event.name, "Test Wildfire")
+        self.assertEqual(self.event.status, "Active")
+        for method, url in ((self.client.post, "/api/staff/events"), (self.client.patch, self.url)):
+            for body in ("{", "[]", "null"):
+                self.assertEqual(method(url, body, content_type="application/json").status_code, 400)
+
+    def test_access_control_missing_event_and_no_delete(self):
+        self.assertEqual(self.client.patch("/api/staff/events/999999", "{}", content_type="application/json").status_code, 404)
+        self.assertEqual(self.client.delete(self.url).status_code, 405)
+        anonymous = Client()
+        for patch in (False, True):
+            self.assertEqual(self.write(self.data, patch=patch, client=anonymous).status_code, 401)
+        anonymous.post("/api/auth/login", json.dumps({"login_email": "holder@example.com", "password": t.PASSWORD}),
+                       content_type="application/json")
+        for patch in (False, True):
+            self.assertEqual(self.write(self.data, patch=patch, client=anonymous).status_code, 403)
+
+    def test_writes_require_csrf(self):
+        client = Client(enforce_csrf_checks=True)
+        client.cookies = self.client.cookies.copy()
+        for patch in (False, True):
+            self.assertEqual(self.write(self.data, patch=patch, client=client).status_code, 403)
+        client.get("/api/auth/csrf")
+        token = client.cookies["csrftoken"].value
+        self.assertEqual(self.write(self.data, client=client, HTTP_X_CSRFTOKEN=token).status_code, 201)
+        self.assertEqual(self.write({"status": "Closed"}, patch=True, client=client, HTTP_X_CSRFTOKEN=token).status_code, 200)
+
+    def test_closing_event_preserves_stays_and_updates_shared_reads(self):
+        from django.db import connection
+        notice = t.make_notice(self.event, self.staff, [self.zone])
+        with connection.cursor() as cur:
+            cur.execute("INSERT INTO REGISTRATION (household_id,event_id,submitter_id) VALUES (%s,%s,%s)",
+                        [self.household.pk, self.event.pk, self.member.pk])
+            registration_id = cur.lastrowid
+            cur.execute("INSERT INTO REGISTRATION_MEMBER VALUES (%s,%s)", [registration_id, self.member.pk])
+            cur.execute("INSERT INTO SHELTER (name,address,capacity,available_spaces) VALUES ('Test','Test',10,9)")
+            shelter_id = cur.lastrowid
+            cur.execute("INSERT INTO MANAGES VALUES (%s,%s)", [self.staff.pk, shelter_id])
+            cur.execute("INSERT INTO PLACEMENT (registration_id,placement_no,shelter_id) VALUES (%s,1,%s)",
+                        [registration_id, shelter_id])
+
+        def snapshot():
+            with connection.cursor() as cur:
+                result = []
+                for table in ("REGISTRATION", "REGISTRATION_MEMBER", "PLACEMENT", "SHELTER", "MANAGES"):
+                    cur.execute("SELECT * FROM " + connection.ops.quote_name(table))
+                    result.append(cur.fetchall())
+                return result
+
+        # Closing preserves both reserved and already-arrived stays.
+        for status in ("Reserved", "Arrived"):
+            with connection.cursor() as cur:
+                cur.execute("UPDATE PLACEMENT SET status=%s, arrival_time=%s WHERE registration_id=%s",
+                            [status, "2026-08-02 12:00:00" if status == "Arrived" else None, registration_id])
+            self.write({"status": "Active"}, patch=True)
+            before = snapshot()
+            response = self.write({"status": "Closed"}, patch=True)
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(snapshot(), before)
+        detail = self.client.get(f"/api/notices/{notice.pk}").json()
+        self.assertEqual(detail["event"]["status"], "Closed")
+        self.assertFalse(detail["can_register"])
+        events = self.client.get("/api/events").json()["events"]
+        self.assertEqual(events[0]["status"], "Closed")
