@@ -76,7 +76,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 import * as authApi from "../api/auth";
 import { ApiError, fetchCsrfCookie } from "../api/client";
-import type { Credentials, CurrentUser, SignupInput } from "../types/api";
+import type { Credentials, CurrentUser, Role, SignupInput } from "../types/api";
 import { AuthContext } from "./authContext";
 
 export default function AuthProvider({ children }: { children: ReactNode }) {
@@ -95,8 +95,8 @@ export default function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = useCallback(async (data: Credentials) => {
-    const loggedIn = await authApi.login(data);
+  const login = useCallback(async (data: Credentials, role: Role = "household") => {
+    const loggedIn = await authApi.login(data, role);
     setUser(loggedIn);
     return loggedIn;
   }, []);
