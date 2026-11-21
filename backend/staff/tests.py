@@ -323,3 +323,127 @@ class EventWriteTests(TestCase):
         self.assertFalse(detail["can_register"])
         events = self.client.get("/api/events").json()["events"]
         self.assertEqual(events[0]["status"], "Closed")
+
+
+class NoticeWriteTests(TestCase):
+    def setUp(self):
+        self.zone = t.make_zone('Zone A')
+        self.other = t.make_zone('Zone B')
+        t.make_household(self.zone)
+        self.staff = t.make_staff()
+        self.event = t.make_event(status='Closed')
+        self.notice = t.make_notice(self.event, self.staff, [self.zone])
+        self.url = f'/api/staff/notices/{self.notice.pk}'
+        self.client.post('/api/staff/auth/login', json.dumps({
+            'login_email': self.staff.login_email, 'password': t.PASSWORD}), content_type='application/json')
+        self.data = {'event_id': self.event.pk, 'title': ' Evacuate ', 'message': ' Leave now ',
+                     'zone_ids': [self.other.pk, self.zone.pk, self.zone.pk]}
+
+    def write(self, data, editing=False, client=None, **headers):
+        client = client or self.client
+        return (client.patch if editing else client.post)(
+            self.url if editing else '/api/staff/notices', json.dumps(data),
+            content_type='application/json', **headers)
+
+    def snapshot(self):
+        from core.models import EvacuationNotice, NoticeZone
+        return (list(EvacuationNotice.objects.values()), list(NoticeZone.objects.values()))
+
+    def test_create_and_edit_contract_metadata_and_targets(self):
+        from django.utils import timezone
+        from core.models import EvacuationNotice
+        before = timezone.now().replace(microsecond=0)
+        response = self.write({**self.data, 'title': 'x' * 150, 'staff_id': 999999,
+                               'published_at': '2000-01-01'})
+        self.assertEqual(response.status_code, 201)
+        row = response.json()
+        self.assertEqual(row['title'], 'x' * 150)
+        self.assertEqual(row['message'], 'Leave now')
+        self.assertEqual(row['publisher'], {'staff_id': self.staff.pk, 'name': self.staff.name})
+        self.assertEqual(row['event']['status'], 'Closed')
+        self.assertEqual([z['zone_id'] for z in row['zones']], [self.zone.pk, self.other.pk])
+        saved = EvacuationNotice.objects.get(pk=row['notice_id'])
+        self.assertGreaterEqual(saved.published_at, before)
+        self.assertLessEqual(saved.published_at, timezone.now())
+        self.assertIn(row, self.client.get('/api/staff/events').json()['events'][0]['notices'])
+        editor = t.make_staff('editor@example.com')
+        self.client.post('/api/staff/auth/login', json.dumps({
+            'login_email': editor.login_email, 'password': t.PASSWORD}), content_type='application/json')
+        response = self.write({'title': ' Corrected ', 'event_id': t.make_event().pk,
+                               'staff_id': editor.pk, 'published_at': '2000-01-01'}, editing=True)
+        self.assertEqual(response.status_code, 200)
+        row = response.json()
+        self.assertEqual(row['title'], 'Corrected')
+        self.assertEqual(row['message'], 'Message text')
+        self.assertEqual(row['event']['event_id'], self.event.pk)
+        self.assertEqual(row['publisher']['staff_id'], self.staff.pk)
+        self.assertEqual(row['published_at'], self.notice.published_at.isoformat())
+        self.assertEqual([z['zone_id'] for z in row['zones']], [self.zone.pk])
+        self.assertEqual(self.write({}, editing=True).json(), row)
+        response = self.write({'zone_ids': [self.other.pk, self.other.pk]}, editing=True)
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual([z['zone_id'] for z in response.json()['zones']], [self.other.pk])
+
+    def test_invalid_inputs_save_nothing(self):
+        before = self.snapshot()
+        invalid = [{'title': ' '}, {'title': 'x' * 151}, {'title': 1}, {'message': None},
+                   {'message': ' '}, {'zone_ids': []}, {'zone_ids': None}, {'zone_ids': '1'},
+                   {'zone_ids': [True]}, {'zone_ids': [1.0]}, {'zone_ids': [{}]},
+                   {'zone_ids': [-1]}, {'zone_ids': [self.zone.pk, 999999]}]
+        for change in invalid:
+            with self.subTest(change=change):
+                self.assertEqual(self.write({**self.data, **change}).status_code, 400)
+                self.assertEqual(self.write({'title': 'Must not save', **change}, editing=True).status_code, 400)
+        for event_id in (None, True, '1', -1, 999999):
+            self.assertEqual(self.write({**self.data, 'event_id': event_id}).status_code, 400)
+        self.assertEqual(self.write({}).status_code, 400)
+        for method, url in ((self.client.post, '/api/staff/notices'), (self.client.patch, self.url)):
+            for body in ('{', '[]', 'null'):
+                self.assertEqual(method(url, body, content_type='application/json').status_code, 400)
+        self.assertEqual(self.snapshot(), before)
+
+    def test_related_write_failure_rolls_back(self):
+        from unittest.mock import patch
+        from django.db import IntegrityError
+        before = self.snapshot()
+        for editing in (False, True):
+            with patch('staff.views.NoticeZone.objects.bulk_create', side_effect=IntegrityError('test failure')):
+                with self.assertRaises(IntegrityError):
+                    self.write(self.data, editing=editing)
+            self.assertEqual(self.snapshot(), before)
+
+    def test_household_visibility_tracks_changes(self):
+        household = Client()
+        household.post('/api/auth/login', json.dumps({'login_email': 'holder@example.com',
+                                                     'password': t.PASSWORD}), content_type='application/json')
+        created = self.write(self.data).json()
+        rows = household.get('/api/notices').json()['notices']
+        self.assertIn(created['notice_id'], [r['notice_id'] for r in rows])
+        self.write({'title': 'Updated', 'zone_ids': [self.other.pk]}, editing=True)
+        rows = household.get('/api/notices').json()['notices']
+        self.assertNotIn(self.notice.pk, [r['notice_id'] for r in rows])
+        detail = household.get(f'/api/notices/{self.notice.pk}').json()
+        self.assertEqual(detail['title'], 'Updated')
+        self.assertFalse(detail['targets_my_zone'])
+        self.assertEqual([z['zone_id'] for z in detail['zones']], [self.other.pk])
+
+    def test_access_and_csrf(self):
+        self.assertEqual(self.client.patch('/api/staff/notices/999999', '{}', content_type='application/json').status_code, 404)
+        self.assertEqual(self.client.delete(self.url).status_code, 405)
+        self.assertEqual(self.client.get('/api/staff/notices').status_code, 405)
+        client = Client()
+        for editing in (False, True):
+            self.assertEqual(self.write(self.data, editing=editing, client=client).status_code, 401)
+        client.post('/api/auth/login', json.dumps({'login_email': 'holder@example.com',
+                                                 'password': t.PASSWORD}), content_type='application/json')
+        for editing in (False, True):
+            self.assertEqual(self.write(self.data, editing=editing, client=client).status_code, 403)
+        client = Client(enforce_csrf_checks=True)
+        client.cookies = self.client.cookies.copy()
+        for editing in (False, True):
+            self.assertEqual(self.write(self.data, editing=editing, client=client).status_code, 403)
+        client.get('/api/auth/csrf')
+        token = client.cookies['csrftoken'].value
+        self.assertEqual(self.write(self.data, client=client, HTTP_X_CSRFTOKEN=token).status_code, 201)
+        self.assertEqual(self.write({'message': 'Correction'}, editing=True, client=client,
+                                    HTTP_X_CSRFTOKEN=token).status_code, 200)
