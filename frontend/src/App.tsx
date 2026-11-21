@@ -7,6 +7,7 @@ import MyHouseholdPage from "./pages/MyHouseholdPage";
 import NoticeDetailsPage from "./pages/NoticeDetailsPage";
 import NoticesPage from "./pages/NoticesPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
+import StaffEventsPage from "./pages/StaffEventsPage";
 import SignUpPage from "./pages/SignUpPage";
 import { ROUTES } from "./routes";
 
@@ -35,9 +36,9 @@ export default function App() {
               <Route path="/shelter/register" element={<PlaceholderPage title="Register for Shelter" owner="Person 2" />} />
             </Route>
 
-            {/* Staff pages. Person 3 replaces this placeholder */}
+            {/* Staff pages */}
             <Route element={<ProtectedRoute role="staff" />}>
-              <Route path={ROUTES.staffHome} element={<PlaceholderPage title="Staff Home" owner="Person 3" />} />
+              <Route path={ROUTES.staffHome} element={<StaffEventsPage />} />
             </Route>
 
             <Route path="*" element={<Navigate to={home} replace />} />
