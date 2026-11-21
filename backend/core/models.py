@@ -1,6 +1,6 @@
 """Shared models for the tables that Person 1 reads or writes.
 
-Every model has managed = False, because the tables are created by backend/sql/schema-v1.sql
+Every model has managed = False, because the tables are created by backend/sql/schema-v2.sql
 (the team's agreed schema). Django only reads and writes rows. It never runs
 migrations for these tables.
 
@@ -66,8 +66,8 @@ class AccountHolder(models.Model):
 
 class Staff(models.Model):
     staff_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=200)
-    login_email = models.CharField(max_length=254, unique=True)
+    name = models.CharField(max_length=100)
+    login_email = models.CharField(max_length=100, unique=True)
     password_hash = models.CharField(max_length=255)
 
     class Meta:
@@ -77,11 +77,11 @@ class Staff(models.Model):
 
 class EmergencyEvent(models.Model):
     event_id = models.AutoField(primary_key=True)
-    name = models.CharField(max_length=200)
-    event_type = models.CharField(max_length=100)
+    name = models.CharField(max_length=100)
+    event_type = models.CharField(max_length=20)
     start_date = models.DateField()
     end_date = models.DateField(null=True, blank=True)
-    status = models.CharField(max_length=30)
+    status = models.CharField(max_length=20)
 
     class Meta:
         managed = False
@@ -90,7 +90,7 @@ class EmergencyEvent(models.Model):
 
 class EvacuationNotice(models.Model):
     notice_id = models.AutoField(primary_key=True)
-    title = models.CharField(max_length=255)
+    title = models.CharField(max_length=150)
     message = models.TextField()
     published_at = models.DateTimeField()
     event = models.ForeignKey(EmergencyEvent, db_column="event_id", on_delete=models.DO_NOTHING)

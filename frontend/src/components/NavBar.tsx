@@ -25,7 +25,7 @@ export default function NavBar() {
         )}
         {user?.role === "staff" && (
           <>
-            <NavLink to={ROUTES.staffHome}>Staff Home</NavLink> {/* Person 3 adds Events & Notices, Shelters */}
+            <NavLink to={ROUTES.staffHome}>Events &amp; Notices</NavLink> {/* Shelter pages follow their backend dependencies. */}
           </>
         )}
         {!user && (

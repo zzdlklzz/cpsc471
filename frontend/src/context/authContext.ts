@@ -1,10 +1,10 @@
 import { createContext, useContext } from "react";
-import type { Credentials, CurrentUser, SignupInput } from "../types/api";
+import type { Credentials, CurrentUser, Role, SignupInput } from "../types/api";
 
 export interface AuthValue {
   user: CurrentUser | null;
   loading: boolean; // true while we ask the server who is logged in
-  login: (data: Credentials) => Promise<CurrentUser>;
+  login: (data: Credentials, role?: Role) => Promise<CurrentUser>;
   signup: (data: SignupInput) => Promise<CurrentUser>;
   logout: () => Promise<void>;
 }
