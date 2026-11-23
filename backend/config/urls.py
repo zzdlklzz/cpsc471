@@ -25,4 +25,5 @@ urlpatterns = [
     path("api/health", core_views.health),
     path("api/", include("accounts.urls")),   # Person 1
     path("api/", include("notices.urls")),    # Person 1
+    path("api/", include("registrations.urls")) # Person 2
 ]

@@ -9,6 +9,8 @@ import NoticesPage from "./pages/NoticesPage";
 import PlaceholderPage from "./pages/PlaceholderPage";
 import SignUpPage from "./pages/SignUpPage";
 import { ROUTES } from "./routes";
+import MyShelterPage from "./pages/MyShelterPage";
+import RegistrationDetailsPage from "./pages/RegistrationDetailsPage";
 
 export default function App() {
   const { user, loading } = useAuth();
@@ -31,7 +33,8 @@ export default function App() {
               <Route path={ROUTES.notices} element={<NoticesPage />} />
               <Route path="/notices/:id" element={<NoticeDetailsPage />} />
               {/* Person 2 replaces these two placeholders */}
-              <Route path={ROUTES.shelter} element={<PlaceholderPage title="My Shelter" owner="Person 2" />} />
+              <Route path={ROUTES.shelter} element={<MyShelterPage />} />
+              <Route path="/shelter/registrations/:id" element={<RegistrationDetailsPage />}/>
               <Route path="/shelter/register" element={<PlaceholderPage title="Register for Shelter" owner="Person 2" />} />
             </Route>
 

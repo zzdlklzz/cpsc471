@@ -1,0 +1,31 @@
+export interface Registration {
+  registration_id: number;
+  event_id: number;
+  status: string;
+  submitted_at: string;
+  event_name: string;
+}
+
+export interface RegistrationListResponse {
+  registrations: Registration[];
+}
+
+export interface RegistrationParticipant {
+  member_id: number;
+  first_name: string;
+  last_name: string;
+}
+
+export interface RegistrationPlacement {
+  placement_no: number;
+  shelter_name: string;
+  status: string;
+  arrival_time: string | null;
+  departure_time: string | null;
+}
+
+export interface RegistrationDetailResponse {
+  registration: Registration;
+  participants: RegistrationParticipant[];
+  placements: RegistrationPlacement[];
+}
