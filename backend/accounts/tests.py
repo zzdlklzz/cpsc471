@@ -20,8 +20,8 @@ class Base(TestCase):
     def patch(self, url, data):
         return self.client.patch(url, json.dumps(data), content_type="application/json")
 
-    def login(self, email="anh@example.com"):
-        response = self.post("/api/auth/login", {"login_email": email, "password": t.PASSWORD})
+    def login(self, email="anh@example.com", url="/api/auth/login"):
+        response = self.post(url, {"login_email": email, "password": t.PASSWORD})
         self.assertEqual(response.status_code, 200, response.content)
         return response.json()
 
@@ -42,7 +42,7 @@ class AuthTests(Base):
         self.assertEqual(user["household_id"], self.household.household_id)
 
     def test_staff_login_returns_staff_role(self):
-        user = self.login("staff@example.com")
+        user = self.login("staff@example.com", url="/api/staff/auth/login")
         self.assertEqual(user["role"], "staff")
         self.assertEqual(user["staff_id"], self.staff.staff_id)
         self.assertIsNone(user["household_id"])
@@ -107,7 +107,7 @@ class HouseholdTests(Base):
         self.assertEqual(self.client.get("/api/household").status_code, 401)
 
     def test_staff_cannot_open_household_pages(self):
-        self.login("staff@example.com")
+        self.login("staff@example.com", url="/api/staff/auth/login")
         self.assertEqual(self.client.get("/api/household").status_code, 403)
 
     def test_get_shows_only_own_household(self):

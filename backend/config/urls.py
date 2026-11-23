@@ -23,6 +23,7 @@ from core import views as core_views
 urlpatterns = [
     path("admin/", admin.site.urls),
     path("api/health", core_views.health),
+    path("api/staff/", include("staff.urls")),  # Person 3
     path("api/", include("accounts.urls")),   # Person 1
     path("api/", include("notices.urls")),    # Person 1
 ]
