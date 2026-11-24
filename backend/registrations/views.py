@@ -150,3 +150,48 @@ def registration_detail(request, registration_id):
         "participants": participants,
         "placements": placements,
     })
+
+@household_required
+@require_http_methods(["GET"])
+def shelter_list(request):
+    """Return open shelters with staff and enough available spaces."""
+    raw_group_size = request.GET.get("group_size", "")
+
+    try:
+        group_size = int(raw_group_size)
+    except ValueError:
+        return api_error(400, "Choose at least one household member.")
+
+    if group_size < 1:
+        return api_error(400, "Choose at least one household member.")
+
+    with connection.cursor() as cursor:
+        cursor.execute(
+            """
+            SELECT shelter_id, name, address, available_spaces
+            FROM SHELTER
+            WHERE operating_status = 'Open'
+              AND available_spaces >= %s
+              AND EXISTS (
+                  SELECT 1
+                  FROM MANAGES
+                  WHERE MANAGES.shelter_id = SHELTER.shelter_id
+              )
+            ORDER BY name, shelter_id
+            """,
+            [group_size],
+        )
+        rows = cursor.fetchall()
+
+    shelters = []
+
+    for row in rows:
+        shelter = {
+            "shelter_id": row[0],
+            "name": row[1],
+            "address": row[2],
+            "available_spaces": row[3],
+        }
+        shelters.append(shelter)
+
+    return JsonResponse({"shelters": shelters})

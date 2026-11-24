@@ -29,3 +29,14 @@ export interface RegistrationDetailResponse {
   participants: RegistrationParticipant[];
   placements: RegistrationPlacement[];
 }
+
+export interface Shelter {
+  shelter_id: number;
+  name: string;
+  address: string;
+  available_spaces: number;
+}
+
+export interface ShelterListResponse {
+  shelters: Shelter[];
+}

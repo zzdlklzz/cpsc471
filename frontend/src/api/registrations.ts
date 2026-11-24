@@ -2,6 +2,7 @@ import { api } from "./client";
 import type {
   RegistrationDetailResponse,
   RegistrationListResponse,
+  ShelterListResponse,
 } from "../types/registration";
 
 export function getRegistrations(): Promise<RegistrationListResponse> {
@@ -13,5 +14,13 @@ export function getRegistration(
 ): Promise<RegistrationDetailResponse> {
   return api<RegistrationDetailResponse>(
     "/registrations/" + registrationId,
+  );
+}
+
+export function getShelters(
+  groupSize: number,
+): Promise<ShelterListResponse> {
+  return api<ShelterListResponse>(
+    "/shelters?group_size=" + groupSize,
   );
 }
