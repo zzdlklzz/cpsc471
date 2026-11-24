@@ -14,6 +14,8 @@ import MyShelterPage from "./pages/MyShelterPage";
 import RegistrationDetailsPage from "./pages/RegistrationDetailsPage";
 import RegisterShelterPage from "./pages/RegisterShelterPage";
 
+import StaffAccommodationPage from "./pages/StaffAccommodationPage";
+
 export default function App() {
   const { user, loading } = useAuth();
   const home = !user ? ROUTES.login : user.role === "staff" ? ROUTES.staffHome : ROUTES.household;
@@ -42,6 +44,7 @@ export default function App() {
 
             {/* Staff pages */}
             <Route element={<ProtectedRoute role="staff" />}>
+              <Route path={ROUTES.staffAccommodation} element={<StaffAccommodationPage />} />
               <Route path={ROUTES.staffHome} element={<StaffEventsPage />} />
             </Route>
 

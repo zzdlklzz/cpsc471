@@ -8,5 +8,6 @@ export const ROUTES = {
   /** Person 2's registration flow. Person 1 only links to it with the event selected. */
   shelterRegister: (eventId: number | string) => `/shelter/register?event=${eventId}`,
   shelter: "/shelter",
+  staffAccommodation: "/staff/accommodation",
   staffHome: "/staff",
 } as const;
