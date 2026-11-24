@@ -25,7 +25,7 @@ export default function NavBar() {
         )}
         {user?.role === "staff" && (
           <>
-            <NavLink to={ROUTES.staffHome}>Events &amp; Notices</NavLink> <NavLink to={ROUTES.staffAccommodation}>Accommodation</NavLink>
+            <NavLink to={ROUTES.staffHome} end>Events &amp; Notices</NavLink> <NavLink to={ROUTES.staffAccommodation}>Accommodation</NavLink>
           </>
         )}
         {!user && (

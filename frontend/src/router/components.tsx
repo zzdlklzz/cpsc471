@@ -124,9 +124,9 @@ export function Link({ to, children, className }: LinkProps) {
 }
 
 /** A link that gets the class "active" while its page is open. */
-export function NavLink({ to, children }: { to: string; children: ReactNode }) {
+export function NavLink({ to, children, end = false }: { to: string; children: ReactNode; end?: boolean }) {
   const { pathname } = useLocationValue();
-  const active = pathname === to || pathname.startsWith(to + "/");
+  const active = pathname === to || (!end && pathname.startsWith(to + "/"));
   return (
     <Link to={to} className={active ? "active" : undefined}>
       {children}

@@ -50,3 +50,35 @@ textarea:focus { outline: 2px solid var(--brand); }
 .zone-options label { display: flex; align-items: center; gap: 8px; margin: 6px 0; }
 .zone-options input { width: auto; }
 .staff-notice { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 12px; overflow-wrap: anywhere; }
+
+/* Shared vertical rhythm for page sections, forms and detail panels. */
+main > section > * + * { margin-top: 16px; }
+main > section > h1 + p { margin-top: 0; }
+h3 { font-size: 1rem; margin: 20px 0 8px; }
+p { margin: 12px 0; }
+.card > :first-child { margin-top: 0; }
+.card > :last-child { margin-bottom: 0; }
+.card-head { margin-bottom: 12px; }
+.card-head h2 { margin: 0; }
+.filters { align-items: end; }
+.filters label { min-width: min(180px, 100%); }
+.filters button { flex-shrink: 0; }
+form, .editor-fields { gap: 16px; }
+form h2 { margin: 16px 0 0; }
+form p, .editor-fields p { margin: 0; }
+.card, .card-head > *, .nav-user { min-width: 0; overflow-wrap: anywhere; }
+.accommodation > ul { list-style: none; padding: 0; display: grid; gap: 16px; }
+.accommodation > ul > li { background: #fff; border: 1px solid var(--line); border-radius: 10px; padding: 20px; }
+.accommodation li > button { margin: 0 8px 8px 0; }
+.accommodation li ul { padding-left: 24px; margin: 12px 0; }
+.accommodation li li + li { margin-top: 8px; }
+.accommodation h2 { margin-top: 28px; }
+.placement-view { max-width: 320px; }
+@media (max-width: 640px) {
+  .navbar { gap: 12px; padding: 12px 16px; }
+  .navbar nav { flex-basis: 100%; gap: 16px; }
+  .card { padding: 16px; }
+  .filters { flex-direction: column; align-items: stretch; }
+  .filters label { width: 100%; }
+  .actions > button { flex: 1 1 auto; }
+}
