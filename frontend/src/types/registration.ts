@@ -51,3 +51,11 @@ export interface CreateRegistrationResponse {
   registration_id: number;
   message: string;
 }
+
+export interface UpdateParticipantsRequest {
+  member_ids: number[];
+}
+
+export interface UpdateParticipantsResponse {
+  message: string;
+}

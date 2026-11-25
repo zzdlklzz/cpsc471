@@ -396,3 +396,202 @@ def create_registration(request):
         },
         status=201,
     )
+
+@household_required
+@require_http_methods(["PATCH"])
+def update_participants(request, registration_id):
+    """Update participants before check-in and adjust shelter spaces."""
+    data = read_json(request)
+
+    if data is None:
+        return api_error(400, "Send a valid JSON object.")
+
+    member_ids = data.get("member_ids")
+
+    if not isinstance(member_ids, list) or len(member_ids) == 0:
+        return api_error(400, "Select at least one household member.")
+
+    for member_id in member_ids:
+        if type(member_id) is not int or member_id < 1:
+            return api_error(400, "Select valid household members.")
+
+    if len(member_ids) != len(set(member_ids)):
+        return api_error(400, "Do not select the same member twice.")
+
+    household_id = request.current_user["household_id"]
+
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT household_id
+                FROM HOUSEHOLD
+                WHERE household_id = %s
+                FOR UPDATE
+                """,
+                [household_id],
+            )
+
+            if cursor.fetchone() is None:
+                return api_error(404, "This household was not found.")
+
+            # Check ownership and prevent simultaneous changes.
+            cursor.execute(
+                """
+                SELECT status
+                FROM REGISTRATION
+                WHERE registration_id = %s
+                  AND household_id = %s
+                FOR UPDATE
+                """,
+                [registration_id, household_id],
+            )
+            registration = cursor.fetchone()
+
+            if registration is None:
+                return api_error(404, "This registration was not found.")
+
+            if registration[0].lower() != "reserved":
+                return api_error(
+                    409,
+                    "Participants can only be changed for a reserved registration.",
+                )
+
+            cursor.execute(
+                """
+                SELECT member_id
+                FROM HOUSEHOLD_MEMBER
+                WHERE household_id = %s
+                FOR UPDATE
+                """,
+                [household_id],
+            )
+            member_rows = cursor.fetchall()
+
+            household_member_ids = set()
+
+            for member_row in member_rows:
+                household_member_ids.add(member_row[0])
+
+            for member_id in member_ids:
+                if member_id not in household_member_ids:
+                    return api_error(
+                        400,
+                        "Every participant must belong to your household.",
+                    )
+
+            # Check all placements so a previous check-in also blocks editing.
+            cursor.execute(
+                """
+                SELECT placement_no,
+                       shelter_id,
+                       status,
+                       arrival_time,
+                       departure_time
+                FROM PLACEMENT
+                WHERE registration_id = %s
+                ORDER BY placement_no
+                FOR UPDATE
+                """,
+                [registration_id],
+            )
+            placements = cursor.fetchall()
+
+            if len(placements) == 0:
+                return api_error(409, "This registration has no placement.")
+
+            for placement in placements:
+                if placement[3] is not None:
+                    return api_error(
+                        409,
+                        "Participants cannot be changed after check-in.",
+                    )
+
+            latest_placement = placements[-1]
+
+            if (
+                latest_placement[2].lower() != "reserved"
+                or latest_placement[4] is not None
+            ):
+                return api_error(
+                    409,
+                    "This placement is no longer reserved.",
+                )
+
+            shelter_id = latest_placement[1]
+
+            cursor.execute(
+                """
+                SELECT member_id
+                FROM REGISTRATION_MEMBER
+                WHERE registration_id = %s
+                FOR UPDATE
+                """,
+                [registration_id],
+            )
+            current_members = cursor.fetchall()
+
+            old_group_size = len(current_members)
+            new_group_size = len(member_ids)
+            extra_spaces_needed = new_group_size - old_group_size
+
+            cursor.execute(
+                """
+                SELECT available_spaces, capacity
+                FROM SHELTER
+                WHERE shelter_id = %s
+                FOR UPDATE
+                """,
+                [shelter_id],
+            )
+            shelter = cursor.fetchone()
+
+            if shelter is None:
+                return api_error(404, "This shelter was not found.")
+
+            updated_spaces = shelter[0] - extra_spaces_needed
+
+            if updated_spaces < 0:
+                return api_error(
+                    409,
+                    "This shelter does not have enough spaces "
+                    "for the additional participants.",
+                )
+
+            if updated_spaces > shelter[1]:
+                return api_error(
+                    409,
+                    "Shelter availability is inconsistent. Contact staff.",
+                )
+
+            # All checks passed. Replace the participant list.
+            cursor.execute(
+                """
+                DELETE FROM REGISTRATION_MEMBER
+                WHERE registration_id = %s
+                """,
+                [registration_id],
+            )
+
+            for member_id in member_ids:
+                cursor.execute(
+                    """
+                    INSERT INTO REGISTRATION_MEMBER
+                        (registration_id, member_id)
+                    VALUES (%s, %s)
+                    """,
+                    [registration_id, member_id],
+                )
+
+            cursor.execute(
+                """
+                UPDATE SHELTER
+                SET available_spaces = %s
+                WHERE shelter_id = %s
+                """,
+                [updated_spaces, shelter_id],
+            )
+
+    return JsonResponse({
+        "message": "Participants updated.",
+    })

@@ -5,6 +5,8 @@ import type {
   RegistrationDetailResponse,
   RegistrationListResponse,
   ShelterListResponse,
+  UpdateParticipantsRequest,
+  UpdateParticipantsResponse,
 } from "../types/registration";
 
 export function getRegistrations(): Promise<RegistrationListResponse> {
@@ -34,5 +36,16 @@ export function createRegistration(
     "/registrations/create",
     "POST",
     reservation,
+  );
+}
+
+export function updateParticipants(
+  registrationId: number,
+  participants: UpdateParticipantsRequest,
+): Promise<UpdateParticipantsResponse> {
+  return api<UpdateParticipantsResponse>(
+    "/registrations/" + registrationId + "/participants",
+    "PATCH",
+    participants,
   );
 }
