@@ -59,3 +59,7 @@ export interface UpdateParticipantsRequest {
 export interface UpdateParticipantsResponse {
   message: string;
 }
+
+export interface CancelRegistrationResponse {
+  message: string;
+}

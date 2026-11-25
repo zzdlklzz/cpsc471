@@ -1,12 +1,13 @@
 import { api } from "./client";
-import type {
-  CreateRegistrationRequest,
-  CreateRegistrationResponse,
-  RegistrationDetailResponse,
-  RegistrationListResponse,
-  ShelterListResponse,
-  UpdateParticipantsRequest,
-  UpdateParticipantsResponse,
+import {
+  type CreateRegistrationRequest,
+  type CreateRegistrationResponse,
+  type RegistrationDetailResponse,
+  type RegistrationListResponse,
+  type ShelterListResponse,
+  type UpdateParticipantsRequest,
+  type UpdateParticipantsResponse,
+  type CancelRegistrationResponse,
 } from "../types/registration";
 
 export function getRegistrations(): Promise<RegistrationListResponse> {
@@ -47,5 +48,14 @@ export function updateParticipants(
     "/registrations/" + registrationId + "/participants",
     "PATCH",
     participants,
+  );
+}
+
+export function cancelRegistration(
+  registrationId: number,
+): Promise<CancelRegistrationResponse> {
+  return api<CancelRegistrationResponse>(
+    "/registrations/" + registrationId + "/cancel",
+    "POST",
   );
 }

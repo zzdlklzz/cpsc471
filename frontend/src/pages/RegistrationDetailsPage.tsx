@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 
-import { getRegistration, updateParticipants } from "../api/registrations";
+import { cancelRegistration, getRegistration, updateParticipants } from "../api/registrations";
 import { getHousehold } from "../api/household";
 import type { Member } from "../types/api";
 import { Link, useParams } from "../router";
@@ -201,6 +201,61 @@ export default function RegistrationDetailsPage() {
   const [loaded, setLoaded] = useState<LoadedRegistration | null>(null);
   const [editingParticipants, setEditingParticipants] = useState(false);
   const [participantMessage, setParticipantMessage] = useState("");
+  const [cancelling, setCancelling] = useState(false);
+  const [cancellationError, setCancellationError] = useState("");
+  const [cancellationMessage, setCancellationMessage] = useState("");
+
+  async function cancelReservation() {
+    if (cancelling) {
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Cancel this shelter reservation? Your reserved spaces will be released.",
+    );
+
+    if (!confirmed) {
+      return;
+    }
+
+    setCancellationError("");
+    setCancellationMessage("");
+    setParticipantMessage("");
+    setCancelling(true);
+
+    try {
+      const response = await cancelRegistration(Number(id));
+
+      setCancellationMessage(response.message);
+    } catch (caughtError) {
+      let message = "Could not cancel the reservation.";
+
+      if (caughtError instanceof Error) {
+        message = caughtError.message;
+      }
+
+      setCancellationError(message);
+      setCancelling(false);
+      return;
+    }
+
+    try {
+      const updatedDetails = await getRegistration(Number(id));
+
+      setLoaded({
+        id: id,
+        details: updatedDetails,
+        error: "",
+      });
+    } catch {
+      setCancellationError(
+        "The reservation was cancelled, but the details could not reload. " +
+        "Refresh the page to see the updated status.",
+      );
+    } finally {
+      setCancelling(false);
+    }
+  }
 
   useEffect(function loadRegistration() {
     let cancelled = false;
@@ -292,7 +347,7 @@ export default function RegistrationDetailsPage() {
         {!editingParticipants && (
           <button
             type="button"
-            disabled={
+            disabled={ cancelling || cancellationMessage !== "" ||
               details.registration.status.toLowerCase() !== "reserved" ||
               details.placements.length === 0 ||
               details.placements.some(function isUnavailable(placement) {
@@ -333,6 +388,44 @@ export default function RegistrationDetailsPage() {
 
         {participantMessage && (
           <p role="status">{participantMessage}</p>
+        )}
+      </div>
+
+      <div className="card">
+        <h2>Cancel Reservation</h2>
+
+        <p>
+          Cancellation releases your reserved spaces and keeps your
+          registration history.
+        </p>
+
+        <button
+          type="button"
+          onClick={cancelReservation}
+          disabled={
+            cancelling ||
+            editingParticipants ||
+            cancellationMessage !== "" ||
+            details.registration.status.toLowerCase() !== "reserved" ||
+            details.placements.length === 0 ||
+            details.placements.some(function hasCheckedIn(placement) {
+              return placement.arrival_time !== null;
+            }) ||
+            details.placements[details.placements.length - 1]
+              .status.toLowerCase() !== "reserved" ||
+            details.placements[details.placements.length - 1]
+              .departure_time !== null
+          }
+        >
+          {cancelling ? "Cancelling reservation..." : "Cancel Reservation"}
+        </button>
+
+        {cancellationError && (
+          <p role="alert">{cancellationError}</p>
+        )}
+
+        {cancellationMessage && (
+          <p role="status">{cancellationMessage}</p>
         )}
       </div>
 

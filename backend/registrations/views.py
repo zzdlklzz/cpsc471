@@ -268,7 +268,7 @@ def create_registration(request):
 
             cursor.execute(
                 """
-                SELECT registration_id
+                SELECT registration_id, status
                 FROM REGISTRATION
                 WHERE household_id = %s
                   AND event_id = %s
@@ -276,12 +276,43 @@ def create_registration(request):
                 """,
                 [household_id, event_id],
             )
+            existing_registration = cursor.fetchone()
 
-            if cursor.fetchone() is not None:
-                return api_error(
-                    409,
-                    "Your household already has a registration for this event.",
+            registration_id = None
+            placement_no = 1
+
+            if existing_registration is not None:
+                if existing_registration[1].lower() != "cancelled":
+                    return api_error(
+                        409,
+                        "Your household already has a registration for this event.",
+                    )
+
+                registration_id = existing_registration[0]
+
+                cursor.execute(
+                    """
+                    SELECT placement_no, status
+                    FROM PLACEMENT
+                    WHERE registration_id = %s
+                    ORDER BY placement_no
+                    FOR UPDATE
+                    """,
+                    [registration_id],
                 )
+                previous_placements = cursor.fetchall()
+
+                if len(previous_placements) > 0:
+                    latest_placement = previous_placements[-1]
+
+                    if latest_placement[1].lower() != "cancelled":
+                        return api_error(
+                            409,
+                            "The previous placement is not cancelled. "
+                            "Contact staff.",
+                        )
+
+                    placement_no = latest_placement[0] + 1
 
             # Read and lock the household's members, then check that
             # every requested participant belongs to this household.
@@ -351,15 +382,35 @@ def create_registration(request):
                 )
 
             # Validation is finished. Start saving the reservation.
-            cursor.execute(
-                """
-                INSERT INTO REGISTRATION
-                    (status, household_id, event_id, submitter_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                ["Reserved", household_id, event_id, submitter_id],
-            )
-            registration_id = cursor.lastrowid
+            if registration_id is None:
+                cursor.execute(
+                    """
+                    INSERT INTO REGISTRATION
+                        (status, household_id, event_id, submitter_id)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    ["Reserved", household_id, event_id, submitter_id],
+                )
+                registration_id = cursor.lastrowid
+            else:
+                cursor.execute(
+                    """
+                    UPDATE REGISTRATION
+                    SET status = %s,
+                        submitter_id = %s,
+                        submitted_at = CURRENT_TIMESTAMP
+                    WHERE registration_id = %s
+                    """,
+                    ["Reserved", submitter_id, registration_id],
+                )
+
+                cursor.execute(
+                    """
+                    DELETE FROM REGISTRATION_MEMBER
+                    WHERE registration_id = %s
+                    """,
+                    [registration_id],
+                )
 
             for member_id in member_ids:
                 cursor.execute(
@@ -377,7 +428,7 @@ def create_registration(request):
                     (registration_id, placement_no, status, shelter_id)
                 VALUES (%s, %s, %s, %s)
                 """,
-                [registration_id, 1, "Reserved", shelter_id],
+                [registration_id, placement_no, "Reserved", shelter_id],
             )
 
             cursor.execute(
@@ -594,4 +645,156 @@ def update_participants(request, registration_id):
 
     return JsonResponse({
         "message": "Participants updated.",
+    })
+
+@household_required
+@require_http_methods(["POST"])
+def cancel_registration(request, registration_id):
+    """Cancel a reservation before check-in and return its spaces."""
+    household_id = request.current_user["household_id"]
+
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            cursor.execute(
+                """
+                SELECT household_id
+                FROM HOUSEHOLD
+                WHERE household_id = %s
+                FOR UPDATE
+                """,
+                [household_id],
+            )
+
+            if cursor.fetchone() is None:
+                return api_error(404, "This household was not found.")
+
+            # Check ownership and lock the registration.
+            cursor.execute(
+                """
+                SELECT status
+                FROM REGISTRATION
+                WHERE registration_id = %s
+                  AND household_id = %s
+                FOR UPDATE
+                """,
+                [registration_id, household_id],
+            )
+            registration = cursor.fetchone()
+
+            if registration is None:
+                return api_error(404, "This registration was not found.")
+
+            if registration[0].lower() == "cancelled":
+                return api_error(409, "This registration is already cancelled.")
+
+            if registration[0].lower() != "reserved":
+                return api_error(
+                    409,
+                    "Only a reserved registration can be cancelled.",
+                )
+
+            cursor.execute(
+                """
+                SELECT placement_no,
+                       shelter_id,
+                       status,
+                       arrival_time,
+                       departure_time
+                FROM PLACEMENT
+                WHERE registration_id = %s
+                ORDER BY placement_no
+                FOR UPDATE
+                """,
+                [registration_id],
+            )
+            placements = cursor.fetchall()
+
+            if len(placements) == 0:
+                return api_error(409, "This registration has no placement.")
+
+            for placement in placements:
+                if placement[3] is not None:
+                    return api_error(
+                        409,
+                        "A registration cannot be cancelled after check-in.",
+                    )
+
+            latest_placement = placements[-1]
+            placement_no = latest_placement[0]
+            shelter_id = latest_placement[1]
+
+            if (
+                latest_placement[2].lower() != "reserved"
+                or latest_placement[4] is not None
+            ):
+                return api_error(
+                    409,
+                    "This placement is no longer reserved.",
+                )
+
+            cursor.execute(
+                """
+                SELECT member_id
+                FROM REGISTRATION_MEMBER
+                WHERE registration_id = %s
+                FOR UPDATE
+                """,
+                [registration_id],
+            )
+            participants = cursor.fetchall()
+            group_size = len(participants)
+
+            cursor.execute(
+                """
+                SELECT available_spaces, capacity
+                FROM SHELTER
+                WHERE shelter_id = %s
+                FOR UPDATE
+                """,
+                [shelter_id],
+            )
+            shelter = cursor.fetchone()
+
+            if shelter is None:
+                return api_error(404, "This shelter was not found.")
+
+            updated_spaces = shelter[0] + group_size
+
+            if updated_spaces > shelter[1]:
+                return api_error(
+                    409,
+                    "Shelter availability is inconsistent. Contact staff.",
+                )
+
+            # All checks passed. Save the cancellation.
+            cursor.execute(
+                """
+                UPDATE REGISTRATION
+                SET status = %s
+                WHERE registration_id = %s
+                """,
+                ["Cancelled", registration_id],
+            )
+
+            cursor.execute(
+                """
+                UPDATE PLACEMENT
+                SET status = %s
+                WHERE registration_id = %s
+                  AND placement_no = %s
+                """,
+                ["Cancelled", registration_id, placement_no],
+            )
+
+            cursor.execute(
+                """
+                UPDATE SHELTER
+                SET available_spaces = %s
+                WHERE shelter_id = %s
+                """,
+                [updated_spaces, shelter_id],
+            )
+
+    return JsonResponse({
+        "message": "Your reservation has been cancelled.",
     })

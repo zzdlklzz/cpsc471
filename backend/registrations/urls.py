@@ -8,4 +8,5 @@ urlpatterns = [
     path("registrations/create", views.create_registration),
     path("registrations/<int:registration_id>", views.registration_detail),
     path("registrations/<int:registration_id>/participants", views.update_participants,),
+    path("registrations/<int:registration_id>/cancel", views.cancel_registration,),
 ]
