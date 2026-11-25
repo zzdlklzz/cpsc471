@@ -1,10 +1,10 @@
 """Household shelter-registration API views."""
 
-from django.db import connection
+from django.db import connection, transaction
 from django.http import JsonResponse
 from django.views.decorators.http import require_http_methods
 
-from core.auth_helpers import api_error, household_required
+from core.auth_helpers import api_error, household_required, read_json
 
 @household_required
 @require_http_methods(["GET"])
@@ -195,3 +195,204 @@ def shelter_list(request):
         shelters.append(shelter)
 
     return JsonResponse({"shelters": shelters})
+
+@household_required
+@require_http_methods(["POST"])
+def create_registration(request):
+    """Reserve shelter spaces for selected household members."""
+    data = read_json(request)
+
+    if data is None:
+        return api_error(400, "Send a valid JSON object.")
+
+    event_id = data.get("event_id")
+    shelter_id = data.get("shelter_id")
+    member_ids = data.get("member_ids")
+
+    # Use type(...) rather than isinstance(...) here because Python
+    # otherwise treats True and False as integers.
+    if type(event_id) is not int or event_id < 1:
+        return api_error(400, "Choose a valid event.")
+
+    if type(shelter_id) is not int or shelter_id < 1:
+        return api_error(400, "Choose a valid shelter.")
+
+    if not isinstance(member_ids, list) or len(member_ids) == 0:
+        return api_error(400, "Select at least one household member.")
+
+    for member_id in member_ids:
+        if type(member_id) is not int or member_id < 1:
+            return api_error(400, "Select valid household members.")
+
+    if len(member_ids) != len(set(member_ids)):
+        return api_error(400, "Do not select the same member twice.")
+
+    household_id = request.current_user["household_id"]
+    submitter_id = request.current_user["member_id"]
+    group_size = len(member_ids)
+
+    # All changes succeed together or are rolled back together.
+    with transaction.atomic():
+        with connection.cursor() as cursor:
+            # Lock this household so two simultaneous requests from it
+            # cannot create duplicate registrations.
+            cursor.execute(
+                """
+                SELECT household_id
+                FROM HOUSEHOLD
+                WHERE household_id = %s
+                FOR UPDATE
+                """,
+                [household_id],
+            )
+
+            if cursor.fetchone() is None:
+                return api_error(404, "This household was not found.")
+
+            cursor.execute(
+                """
+                SELECT status
+                FROM EMERGENCY_EVENT
+                WHERE event_id = %s
+                FOR SHARE
+                """,
+                [event_id],
+            )
+            event = cursor.fetchone()
+
+            if event is None:
+                return api_error(404, "This event was not found.")
+
+            if event[0].lower() != "active":
+                return api_error(400, "This event is no longer active.")
+
+            cursor.execute(
+                """
+                SELECT registration_id
+                FROM REGISTRATION
+                WHERE household_id = %s
+                  AND event_id = %s
+                FOR UPDATE
+                """,
+                [household_id, event_id],
+            )
+
+            if cursor.fetchone() is not None:
+                return api_error(
+                    409,
+                    "Your household already has a registration for this event.",
+                )
+
+            # Read and lock the household's members, then check that
+            # every requested participant belongs to this household.
+            cursor.execute(
+                """
+                SELECT member_id
+                FROM HOUSEHOLD_MEMBER
+                WHERE household_id = %s
+                FOR UPDATE
+                """,
+                [household_id],
+            )
+            member_rows = cursor.fetchall()
+
+            household_member_ids = set()
+
+            for member_row in member_rows:
+                household_member_ids.add(member_row[0])
+
+            for member_id in member_ids:
+                if member_id not in household_member_ids:
+                    return api_error(
+                        400,
+                        "Every participant must belong to your household.",
+                    )
+
+            # Lock the shelter before checking capacity. Another booking
+            # must wait until this transaction finishes.
+            cursor.execute(
+                """
+                SELECT operating_status, available_spaces
+                FROM SHELTER
+                WHERE shelter_id = %s
+                FOR UPDATE
+                """,
+                [shelter_id],
+            )
+            shelter = cursor.fetchone()
+
+            if shelter is None:
+                return api_error(404, "This shelter was not found.")
+
+            if shelter[0].lower() != "open":
+                return api_error(409, "This shelter is no longer open.")
+
+            if shelter[1] < group_size:
+                return api_error(
+                    409,
+                    "This shelter no longer has enough available spaces. "
+                    "Search again.",
+                )
+
+            cursor.execute(
+                """
+                SELECT staff_id
+                FROM MANAGES
+                WHERE shelter_id = %s
+                FOR SHARE
+                """,
+                [shelter_id],
+            )
+
+            if cursor.fetchone() is None:
+                return api_error(
+                    409,
+                    "This shelter no longer has assigned staff.",
+                )
+
+            # Validation is finished. Start saving the reservation.
+            cursor.execute(
+                """
+                INSERT INTO REGISTRATION
+                    (status, household_id, event_id, submitter_id)
+                VALUES (%s, %s, %s, %s)
+                """,
+                ["Reserved", household_id, event_id, submitter_id],
+            )
+            registration_id = cursor.lastrowid
+
+            for member_id in member_ids:
+                cursor.execute(
+                    """
+                    INSERT INTO REGISTRATION_MEMBER
+                        (registration_id, member_id)
+                    VALUES (%s, %s)
+                    """,
+                    [registration_id, member_id],
+                )
+
+            cursor.execute(
+                """
+                INSERT INTO PLACEMENT
+                    (registration_id, placement_no, status, shelter_id)
+                VALUES (%s, %s, %s, %s)
+                """,
+                [registration_id, 1, "Reserved", shelter_id],
+            )
+
+            cursor.execute(
+                """
+                UPDATE SHELTER
+                SET available_spaces = available_spaces - %s
+                WHERE shelter_id = %s
+                """,
+                [group_size, shelter_id],
+            )
+
+    return JsonResponse(
+        {
+            "registration_id": registration_id,
+            "message": "Your shelter reservation is confirmed.",
+        },
+        status=201,
+    )

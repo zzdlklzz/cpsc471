@@ -1,5 +1,7 @@
 import { api } from "./client";
 import type {
+  CreateRegistrationRequest,
+  CreateRegistrationResponse,
   RegistrationDetailResponse,
   RegistrationListResponse,
   ShelterListResponse,
@@ -22,5 +24,15 @@ export function getShelters(
 ): Promise<ShelterListResponse> {
   return api<ShelterListResponse>(
     "/shelters?group_size=" + groupSize,
+  );
+}
+
+export function createRegistration(
+  reservation: CreateRegistrationRequest,
+): Promise<CreateRegistrationResponse> {
+  return api<CreateRegistrationResponse>(
+    "/registrations/create",
+    "POST",
+    reservation,
   );
 }

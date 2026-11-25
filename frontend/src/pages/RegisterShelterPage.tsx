@@ -3,7 +3,7 @@ import { useEffect, useState } from "react";
 import { getHousehold } from "../api/household";
 import { getEvents } from "../api/notices";
 import type { EventSummary, Member } from "../types/api";
-import { getShelters } from "../api/registrations";
+import { createRegistration, getShelters, } from "../api/registrations";
 import type { Shelter } from "../types/registration";
 
 export default function RegisterShelterPage() {
@@ -17,8 +17,62 @@ export default function RegisterShelterPage() {
   const [searching, setSearching] = useState(false);
   const [searchComplete, setSearchComplete] = useState(false);
   const [searchError, setSearchError] = useState("");
+  const [selectedShelterId, setSelectedShelterId] = useState<number | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [reservationError, setReservationError] = useState("");
+  const [reservationSuccess, setReservationSuccess] = useState("");
+
+async function confirmReservation() {
+  if (saving || reservationSuccess !== "") {
+    return;
+  }
+
+  setReservationError("");
+
+  if (selectedEventId === "") {
+    setReservationError("Choose an event.");
+    return;
+  }
+
+  if (selectedMemberIds.length === 0) {
+    setReservationError("Select at least one household member.");
+    return;
+  }
+
+  if (selectedShelterId === null) {
+    setReservationError("Select a shelter.");
+    return;
+  }
+
+  setSaving(true);
+
+  try {
+    const response = await createRegistration({
+      event_id: Number(selectedEventId),
+      shelter_id: selectedShelterId,
+      member_ids: selectedMemberIds,
+    });
+
+    setReservationSuccess(response.message);
+    setSearchComplete(false);
+    setShelters([]);
+    setSelectedShelterId(null);
+  } catch (caughtError) {
+    let message = "Could not save your reservation.";
+
+    if (caughtError instanceof Error) {
+      message = caughtError.message;
+    }
+
+    setReservationError(message);
+  } finally {
+    setSaving(false);
+  }
+}
 
   async function findShelters() {
+  setSelectedShelterId(null);
+  setReservationError("");
   setSearchError("");
   setSearchComplete(false);
   setShelters([]);
@@ -109,8 +163,10 @@ export default function RegisterShelterPage() {
   <select
     id="event"
     value={selectedEventId}
-    disabled={searching}
+    disabled={searching || saving || reservationSuccess !== ""}
     onChange={function changeEvent(changeEvent) {
+      setSelectedShelterId(null);
+      setReservationError("");
       setSelectedEventId(changeEvent.target.value);
       setSearchComplete(false);
       setShelters([]);
@@ -147,7 +203,9 @@ export default function RegisterShelterPage() {
           disabled={searching}
           checked={selectedMemberIds.includes(member.member_id)}
           onChange={function changeMember(changeEvent) {
-            const checked = changeEvent.target.checked;
+            setSelectedShelterId(null);
+            setReservationError("");
+              const checked = changeEvent.target.checked;
             setSearchComplete(false);
             setShelters([]);
             setSearchError("");
@@ -177,7 +235,7 @@ export default function RegisterShelterPage() {
         <p>People needing spaces: {selectedMemberIds.length}</p>
       </div>
 
-      <button type="button" onClick={findShelters} disabled={searching}>
+      <button type="button" onClick={findShelters} disabled={searching || saving || reservationSuccess !== ""}>
         Find shelters
       </button>
 
@@ -193,16 +251,47 @@ export default function RegisterShelterPage() {
             <p>No eligible shelter has enough available spaces.</p>
           )}
 
-          {shelters.map(function displayShelter(shelter) {
-            return (
-              <div key={shelter.shelter_id}>
-                <h3>{shelter.name}</h3>
-                <p>{shelter.address}</p>
-                <p>Available spaces: {shelter.available_spaces}</p>
-              </div>
-            );
-          })}
+{shelters.map(function displayShelter(shelter) {
+  return (
+    <div key={shelter.shelter_id}>
+      <label>
+        <input
+          type="radio"
+          name="shelter"
+          value={shelter.shelter_id}
+          checked={selectedShelterId === shelter.shelter_id}
+          disabled={searching || saving || reservationSuccess !== ""}
+          onChange={function changeShelter() {
+            setSelectedShelterId(shelter.shelter_id);
+            setReservationError("");
+          }}
+        />
+        {shelter.name}
+      </label>
+
+      <p>{shelter.address}</p>
+      <p>Available spaces: {shelter.available_spaces}</p>
+    </div>
+  );
+})}
+
+{shelters.length > 0 && (
+  <button
+    type="button"
+    onClick={confirmReservation}
+    disabled={saving || reservationSuccess !== ""}
+  >
+    {saving ? "Saving reservation..." : "Confirm Reservation"}
+  </button>
+)}
         </div>
+      )}
+      {reservationError && (
+        <p role="alert">{reservationError}</p>
+      )}
+
+      {reservationSuccess && (
+        <p role="status">{reservationSuccess}</p>
       )}
     </section>
   );

@@ -40,3 +40,14 @@ export interface Shelter {
 export interface ShelterListResponse {
   shelters: Shelter[];
 }
+
+export interface CreateRegistrationRequest {
+  event_id: number;
+  shelter_id: number;
+  member_ids: number[];
+}
+
+export interface CreateRegistrationResponse {
+  registration_id: number;
+  message: string;
+}
