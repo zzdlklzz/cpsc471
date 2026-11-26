@@ -26,4 +26,5 @@ urlpatterns = [
     path("api/staff/", include("staff.urls")),  # Person 3
     path("api/", include("accounts.urls")),   # Person 1
     path("api/", include("notices.urls")),    # Person 1
+    path("api/", include("registrations.urls")) # Person 2
 ]
