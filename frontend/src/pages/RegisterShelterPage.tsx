@@ -118,6 +118,32 @@ async function confirmReservation() {
         if (active) {
           setMembers(household.members);
           setEvents(eventList);
+
+          const searchParameters = new URLSearchParams(
+            window.location.search,
+          );
+          const requestedEventId = searchParameters.get("event_id");
+
+          if (requestedEventId !== null) {
+            let matchingEventFound = false;
+
+            for (const event of eventList) {
+              if (
+                String(event.event_id) === requestedEventId &&
+                event.status.toLowerCase() === "active"
+              ) {
+                setSelectedEventId(String(event.event_id));
+                matchingEventFound = true;
+                break;
+              }
+            }
+
+            if (!matchingEventFound) {
+              setSearchError(
+                "The linked event is unavailable. Choose an active event.",
+              );
+            }
+          }
         }
       } catch (caughtError) {
         if (active) {
@@ -183,7 +209,7 @@ async function confirmReservation() {
 
       return (
         <option key={event.event_id} value={event.event_id}>
-          {event.name}
+          {event.name} (Event {event.event_id})
         </option>
       );
     })}
